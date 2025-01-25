@@ -9,15 +9,19 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 
 from config.config import config
 
+import datetime as dt
+
 
 class ChartWindow(QWidget):
-    """Create widget with a chart of a ."""
+    """Create widget with a chart of an asset."""
 
     def __init__(self, asset_abbr):
         super().__init__()
 
         self.asset_name = ''
         self.asset_abbr = asset_abbr
+        self.asset = None
+        self.data = None
 
         # create the matplotlib figure and canvas
         self.figure, self.ax = plt.subplots(figsize=(10, 6))
@@ -35,31 +39,48 @@ class ChartWindow(QWidget):
         return self.asset_name
 
     def plot_asset_data(self, period='max'):
-        asset = yf.Ticker(self.asset_abbr)
-        data = asset.history(period)
+        """Plot asset chart."""
+        self.asset = yf.Ticker(self.asset_abbr)
+        self.data = self.asset.history(period)
         
         # raise exception is search is unsuccessful
-        if data.empty:
+        if self.data.empty:
             raise Exception('No data found.')
 
-        self.asset_name = asset.info.get('shortName', 'No company name available')
+        self.asset_name = self.asset.info.get('shortName', 'No company name available')
 
         # clear the previous plot and plot the new data
         self.ax.clear()
 
+        # create plot
+        self.create_plot(self.data)
+
+    def refresh_with_new_period(self, period):
+        """Refresh plot with new period."""
+        # clear the previous plot and plot the new data
+        self.ax.clear()
+
+        # get data for specific period
+        tz = self.data.index.tzinfo
+        today = dt.datetime.today()
+        delta = today.replace(tzinfo=tz) - dt.timedelta(days=period)
+
+        # filter for period and create plot
+        filtered_data = self.data.loc[self.data.index >= delta]
+        self.create_plot(filtered_data)
+
+    def create_plot(self, data):
+        """Create plot."""
         # create plot
         self.ax.plot(data.index, data['Close'], label=f'{self.asset_name} Close Price', color='blue')
         self.ax.set_title(f'{self.asset_name} Asset Price')
         self.ax.set_xlabel('Date')
         self.ax.set_ylabel('Price (USD)')
         self.ax.legend()
-        self.ax.tick_params(axis='x', rotation=45)
+        self.ax.tick_params(axis='x', rotation=15)
 
         # draw plot
         self.canvas.draw()
-
-    def refresh_with_new_period(self, period):
-        self.plot_asset_data(period)
 
 
 class AssetDetailsWindow(QMainWindow):
