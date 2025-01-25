@@ -1,8 +1,7 @@
 from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import QMainWindow
 
-from stock_details_window.stock_details_window import AssetDetailsWindow
-
+from asset_details_window.asset_details_window import AssetDetailsWindow
 from config.config import config
 
 

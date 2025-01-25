@@ -125,31 +125,26 @@ class AssetDetailsWindow(QMainWindow):
     def generate_time_period_buttons(self):
         """Add radio buttons for time period."""
         # create radio buttons
-        radio_button_1 = QRadioButton("1 month")
-        radio_button_2 = QRadioButton("1 year")
-        radio_button_3 = QRadioButton("Max")
+        buttons = [QRadioButton(period) for period in config['TIME_PERIODS']]
 
         # add radio buttons to the button layout
         self.layout_period_buttons = QHBoxLayout()
         self.layout_period_buttons.setAlignment(Qt.AlignmentFlag.AlignLeft)
 
-        self.layout_period_buttons.addWidget(radio_button_1)
-        self.layout_period_buttons.addWidget(radio_button_2)
-        self.layout_period_buttons.addWidget(radio_button_3)
+        for button in buttons:
+            self.layout_period_buttons.addWidget(button)
 
         # add buttons to the main layout
         self.main_layout.addLayout(self.layout_period_buttons)
 
         # create a QButtonGroup to group the radio buttons together
         self.button_group = QButtonGroup()
-        self.button_group.addButton(radio_button_1)
-        self.button_group.addButton(radio_button_2)
-        self.button_group.addButton(radio_button_3)
+        for button in buttons:
+            self.button_group.addButton(button)
 
         # connect the radio buttons to a method that refreshes the window with new info
-        radio_button_1.toggled.connect(lambda: self.plot.refresh_with_new_period('1mo'))
-        radio_button_2.toggled.connect(lambda: self.plot.refresh_with_new_period('1y'))
-        radio_button_3.toggled.connect(lambda: self.plot.refresh_with_new_period('max'))
+        for button, period in zip(buttons, config['TIME_PERIODS'].values()):
+            button.toggled.connect(lambda conn, p=period: self.plot.refresh_with_new_period(p))
 
     def remove_time_period_buttons(self):
         """Remove radio buttons for time period."""
