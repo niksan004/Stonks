@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 
 from config.config import config
+from navigation.navigation import Window
 
 import datetime as dt
 
@@ -38,11 +39,12 @@ class ChartWindow(QWidget):
     def __str__(self):
         return self.asset_name
 
-    def plot_asset_data(self, period='max'):
+    def plot_asset_data(self):
         """Plot asset chart."""
+
         self.asset = yf.Ticker(self.asset_abbr)
-        self.data = self.asset.history(period)
-        
+        self.data = self.asset.history('max')
+
         # raise exception is search is unsuccessful
         if self.data.empty:
             raise Exception('No data found.')
@@ -83,7 +85,7 @@ class ChartWindow(QWidget):
         self.canvas.draw()
 
 
-class AssetDetailsWindow(QMainWindow):
+class AssetDetailsWindow(Window):
     """Create window with the plot widget."""
 
     def __init__(self):
@@ -91,7 +93,7 @@ class AssetDetailsWindow(QMainWindow):
 
         # set window attributes
         self.setGeometry(*config['WINDOW_SIZE'])
-        self.setWindowTitle(f'Asset Search')
+        self.setWindowTitle('Asset Search')
 
         # create central widget
         central_widget = QWidget()
