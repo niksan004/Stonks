@@ -1,6 +1,6 @@
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLineEdit, QPushButton, QTableWidget, QTableWidgetItem, QScrollArea, \
-    QSizePolicy, QHBoxLayout
+    QHBoxLayout, QHeaderView, QSizePolicy
 
 import yfinance as yf
 
@@ -23,22 +23,54 @@ class Asset:
         if not self.asset_name:
             raise Exception('No such asset.')
 
+    def __str__(self):
+        return self.asset_name
+
+    def __hash__(self):
+        return hash(self.asset_name)
+
+    def __eq__(self, other):
+        return self.asset_name == other.asset_name
+
+
 class Portfolio:
     """Simulated portfolio."""
 
-    def __init__(self, assets):
-        self.assets = []
+    def __init__(self):
+        self.assets = {}
+
+    def add_asset(self, asset_name, shares) -> None:
+        asset = Asset(asset_name)
+        if self.assets.get(asset, None):
+            self.assets[asset] += shares
+            return
+        self.assets[asset] = shares
+
+    def remove_asset(self, asset_name) -> None:
+        del self.assets[asset_name]
+
+    def get_assets(self):
+        return list(map(str, self.assets))
+
+    def get_shares(self):
+        return self.assets.values()
+
+    def get_pairs(self):
+        return self.assets.items()
+
 
 class PortfolioChart(QWidget):
     """Pie chart for portfolio."""
 
-    def __init__(self):
+    def __init__(self, portfolio: Portfolio):
         super().__init__()
+
+        self.portfolio = portfolio
 
         self.setMaximumSize(self.geometry().width() - 200, self.geometry().height() - 200)
 
         # create the matplotlib figure and canvas
-        self.figure, self.ax = plt.subplots(figsize=(10, 6))
+        self.figure, self.ax = plt.subplots()
         self.canvas = FigureCanvas(self.figure)
 
         # create a layout for this widget
@@ -46,17 +78,26 @@ class PortfolioChart(QWidget):
         layout.addWidget(self.canvas)
         self.setLayout(layout)
 
-        # Data for the pie chart
-        labels = ['AAPL', 'TSLA', 'VWCE', 'Gold']
-        sizes = [30, 25, 25, 20]
+        self.draw_chart()
 
-        # Create pie chart
-        self.ax.pie(sizes, labels=labels, autopct='%1.1f%%', startangle=140, textprops={'color': 'white'})
+    def draw_chart(self) -> None:
+        # create pie chart
+        self.ax.pie(
+            self.portfolio.get_shares(),
+            labels=self.portfolio.get_assets(),
+            autopct='%1.1f%%', startangle=140,
+            textprops={'color': 'white'}
+        )
         self.figure.set_facecolor(self.palette().color(self.backgroundRole()).name())
 
-        # Display the chart
         self.ax.set_title('Simulated Portfolio', color='gray')
         self.canvas.draw()
+
+    def redraw(self, portfolio: Portfolio) -> None:
+        self.portfolio = portfolio
+        self.ax.clear()
+        self.draw_chart()
+
 
 class PortfolioWindow(Window):
     """Create window with simulated portfolio."""
@@ -76,55 +117,76 @@ class PortfolioWindow(Window):
         central_widget.setLayout(self.main_layout)
         self.setCentralWidget(central_widget)
 
+        self.portfolio = Portfolio()
+
         # add search
-        self.textbox = None
+        self.textbox_name = None
+        self.textbox_percentage = None
         self.button = None
         self.table = None
         self.add_search_widgets()
-        # self.add_to_table()
 
         # plot pie chart
-        self.plot = PortfolioChart()
+        self.chart = PortfolioChart(self.portfolio)
+        self.table = QTableWidget()
         self.asset_layout = QHBoxLayout()
+        self.asset_layout.addWidget(self.chart)
+        self.asset_layout.addWidget(self.table)
         self.main_layout.addLayout(self.asset_layout)
-        self.asset_layout.addWidget(self.plot)
 
     def add_search_widgets(self):
         """Create and add textbox and button for searches."""
-        self.textbox = QLineEdit()
-        self.textbox.setPlaceholderText('Enter asset abbreviation')
+        self.textbox_name = QLineEdit()
+        self.textbox_name.setPlaceholderText('Enter asset abbreviation')
 
-        self.button = QPushButton('Search')
-        self.button.clicked.connect(self.add_to_table)  # will add the chart if search is successful
+        self.textbox_percentage = QLineEdit()
+        self.textbox_percentage.setPlaceholderText('Enter percentage')
 
-        self.main_layout.addWidget(self.textbox)
-        self.main_layout.addWidget(self.button)
+        self.button = QPushButton('Add')
+        self.button.clicked.connect(self.add_to_portfolio)  # will add the chart if search is successful
 
-    def add_to_table(self):
-        self.table = QTableWidget(self)
+        search_layout = QHBoxLayout()
+        search_layout.addWidget(self.textbox_name)
+        search_layout.addWidget(self.textbox_percentage)
+        search_layout.addWidget(self.button)
+        self.main_layout.addLayout(search_layout)
 
-        # Set the number of rows and columns
-        self.table.setRowCount(5)  # 5 rows
-        self.table.setColumnCount(3)  # 3 columns
+    def add_to_portfolio(self):
+        """Add asset to portfolio if it is found."""
+        # if an unexpected error occurs
+        try:
+            self.portfolio.add_asset(self.textbox_name.text(), float(self.textbox_percentage.text()))
+        except Exception:
+            self.textbox_name.clear()
+            self.textbox_percentage.clear()
+            self.textbox_name.setPlaceholderText('Error')
+            self.textbox_percentage.setPlaceholderText('Error')
+            return
 
-        # Set the headers (optional)
-        self.table.setHorizontalHeaderLabels(["Name", "Age", "City"])
+        self.reload_chart()
+        self.reload_table()
 
-        # Add data to the table (add items by row and column)
-        data = [
-            ("Alice", 25, "New York"),
-            ("Bob", 30, "Los Angeles"),
-            ("Charlie", 35, "Chicago"),
-            ("David", 40, "Houston"),
-            ("Eve", 22, "Phoenix")
-        ]
+    def reload_table(self):
+        # remove old table
+        self.asset_layout.removeWidget(self.table)
+        self.table = QTableWidget()
 
-        for row, (name, age, city) in enumerate(data):
-            self.table.setItem(row, 0, QTableWidgetItem(name))
-            self.table.setItem(row, 1, QTableWidgetItem(str(age)))  # Convert age to string
-            self.table.setItem(row, 2, QTableWidgetItem(city))
+        # make table fill empty space
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
 
         self.table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
+        # remake table with new data
+        self.table.setColumnCount(2)
+        self.table.setHorizontalHeaderLabels(['Asset', 'Shares'])
+
+        self.table.setRowCount(len(self.portfolio.get_assets()))
+        for row, asset in enumerate(self.portfolio.get_pairs()):
+            self.table.setItem(row, 0, QTableWidgetItem(str(asset[0])))
+            self.table.setItem(row, 1, QTableWidgetItem(str(asset[1])))
+
         self.asset_layout.addWidget(self.table)
+
+    def reload_chart(self):
+        self.chart.redraw(self.portfolio)
