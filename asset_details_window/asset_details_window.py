@@ -1,5 +1,5 @@
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QRadioButton, QButtonGroup, QLineEdit, QPushButton, \
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QRadioButton, QButtonGroup, QLineEdit, QPushButton, \
     QHBoxLayout
 
 import yfinance as yf
@@ -13,7 +13,7 @@ from navigation.navigation import Window
 import datetime as dt
 
 
-class ChartWindow(QWidget):
+class ChartWidget(QWidget):
     """Create widget with a chart of an asset."""
 
     def __init__(self, asset_abbr):
@@ -74,12 +74,16 @@ class ChartWindow(QWidget):
     def create_plot(self, data):
         """Create plot."""
         # create plot
-        self.ax.plot(data.index, data['Close'], label=f'{self.asset_name} Close Price', color='blue')
-        self.ax.set_title(f'{self.asset_name} Asset Price')
-        self.ax.set_xlabel('Date')
-        self.ax.set_ylabel('Price (USD)')
+        self.ax.plot(data.index, data['Close'], label=f'{self.asset_name} Close Price', color='green')
+        self.ax.set_title(f'{self.asset_name} Asset Price', color='gray')
+        self.ax.set_xlabel('Date', color='gray')
+        self.ax.set_ylabel('Price (USD)', color='gray')
         self.ax.legend()
-        self.ax.tick_params(axis='x', rotation=15)
+        self.ax.tick_params(axis='both', rotation=15, colors='gray')
+
+        bg_color = self.palette().color(self.backgroundRole()).name()
+        self.figure.set_facecolor(bg_color)
+        self.ax.set_facecolor(bg_color)
 
         # draw plot
         self.canvas.draw()
@@ -133,7 +137,7 @@ class AssetDetailsWindow(Window):
 
         # if an unexpected error occurs
         try:
-            self.plot = ChartWindow(self.textbox.text().upper())
+            self.plot = ChartWidget(self.textbox.text().upper())
         except Exception:
             self.textbox.clear()
             self.textbox.setPlaceholderText('No asset found')

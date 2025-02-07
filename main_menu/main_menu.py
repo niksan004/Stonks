@@ -29,9 +29,6 @@ class MainMenu(Window):
         self.menu_bar = None
         self.create_menu()
 
-        # add main menu to navigation
-        # nav.add_window(self)
-
     def create_menu(self):
         """Manage menu."""
 
