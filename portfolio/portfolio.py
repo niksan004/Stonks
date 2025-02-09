@@ -32,6 +32,10 @@ class Asset:
     def __eq__(self, other):
         return self.asset_name == other.asset_name
 
+    @property
+    def info(self):
+        return self.asset.info
+
 
 class Portfolio:
     """Simulated portfolio."""
@@ -46,8 +50,8 @@ class Portfolio:
             return
         self.assets[asset] = shares
 
-    def remove_asset(self, asset_name) -> None:
-        del self.assets[asset_name]
+    def remove_asset(self, asset: Asset) -> None:
+        del self.assets[asset]
 
     def get_assets(self):
         return list(map(str, self.assets))
@@ -57,6 +61,9 @@ class Portfolio:
 
     def get_pairs(self):
         return self.assets.items()
+
+    def calc_overlap(self) -> float:
+        pass
 
 
 class PortfolioChart(QWidget):
@@ -119,19 +126,21 @@ class PortfolioWindow(Window):
 
         self.portfolio = Portfolio()
 
-        # add search
+        # declare attributes that could be initialized in other methods
         self.textbox_name = None
         self.textbox_percentage = None
         self.button = None
         self.table = None
+
+        # add search
         self.add_search_widgets()
 
         # plot pie chart
         self.chart = PortfolioChart(self.portfolio)
         self.table = QTableWidget()
         self.asset_layout = QHBoxLayout()
-        self.asset_layout.addWidget(self.chart)
-        self.asset_layout.addWidget(self.table)
+        self.asset_layout.addWidget(self.chart) # only to look better
+        self.asset_layout.addWidget(self.table) # same as ^
         self.main_layout.addLayout(self.asset_layout)
 
     def add_search_widgets(self):
@@ -140,7 +149,7 @@ class PortfolioWindow(Window):
         self.textbox_name.setPlaceholderText('Enter asset abbreviation')
 
         self.textbox_percentage = QLineEdit()
-        self.textbox_percentage.setPlaceholderText('Enter percentage')
+        self.textbox_percentage.setPlaceholderText('Enter shares')
 
         self.button = QPushButton('Add')
         self.button.clicked.connect(self.add_to_portfolio)  # will add the chart if search is successful
@@ -178,15 +187,25 @@ class PortfolioWindow(Window):
         self.table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
         # remake table with new data
-        self.table.setColumnCount(2)
-        self.table.setHorizontalHeaderLabels(['Asset', 'Shares'])
+        self.table.setColumnCount(3)
+        self.table.setHorizontalHeaderLabels(['Asset', 'Shares', ''])
 
         self.table.setRowCount(len(self.portfolio.get_assets()))
         for row, asset in enumerate(self.portfolio.get_pairs()):
             self.table.setItem(row, 0, QTableWidgetItem(str(asset[0])))
             self.table.setItem(row, 1, QTableWidgetItem(str(asset[1])))
 
+            remove_button = QPushButton('Remove')
+            remove_button.clicked.connect(lambda signal, asset_to_remove=asset[0]:
+                                          self.remove_from_portfolio(asset_to_remove))
+            self.table.setCellWidget(row, 2, remove_button)
+
         self.asset_layout.addWidget(self.table)
 
     def reload_chart(self):
         self.chart.redraw(self.portfolio)
+
+    def remove_from_portfolio(self, asset):
+        self.portfolio.remove_asset(asset)
+        self.reload_table()
+        self.reload_chart()
