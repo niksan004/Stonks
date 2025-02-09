@@ -1,6 +1,6 @@
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLineEdit, QPushButton, QTableWidget, QTableWidgetItem, QScrollArea, \
-    QHBoxLayout, QHeaderView, QSizePolicy
+    QHBoxLayout, QHeaderView, QGroupBox
 
 import yfinance as yf
 
@@ -9,6 +9,8 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 
 from config.config import config
 from navigation.navigation import Window
+
+import datetime as dt
 
 
 class Asset:
@@ -36,6 +38,9 @@ class Asset:
     def info(self):
         return self.asset.info
 
+    def get_data_between_dates(self, start_date, end_date):
+        return self.asset.history(start=start_date, end=end_date)
+
 
 class Portfolio:
     """Simulated portfolio."""
@@ -50,10 +55,13 @@ class Portfolio:
             return
         self.assets[asset] = shares
 
+    def get_assets(self):
+        return self.assets
+
     def remove_asset(self, asset: Asset) -> None:
         del self.assets[asset]
 
-    def get_assets(self):
+    def get_asset_names(self):
         return list(map(str, self.assets))
 
     def get_shares(self):
@@ -63,6 +71,10 @@ class Portfolio:
         return self.assets.items()
 
     def calc_overlap(self) -> float:
+        """Calculate the overlap between the assets in the portfolio."""
+        pass
+
+    def test_with_historical_data(self):
         pass
 
 
@@ -91,7 +103,7 @@ class PortfolioChart(QWidget):
         # create pie chart
         self.ax.pie(
             self.portfolio.get_shares(),
-            labels=self.portfolio.get_assets(),
+            labels=self.portfolio.get_asset_names(),
             autopct='%1.1f%%', startangle=140,
             textprops={'color': 'white'}
         )
@@ -143,6 +155,11 @@ class PortfolioWindow(Window):
         self.asset_layout.addWidget(self.table) # same as ^
         self.main_layout.addLayout(self.asset_layout)
 
+        # add testing option
+        self.textbox_begin_date = None
+        self.textbox_end_date = None
+        self.add_testing_widgets()
+
     def add_search_widgets(self):
         """Create and add textbox and button for searches."""
         self.textbox_name = QLineEdit()
@@ -190,7 +207,7 @@ class PortfolioWindow(Window):
         self.table.setColumnCount(3)
         self.table.setHorizontalHeaderLabels(['Asset', 'Shares', ''])
 
-        self.table.setRowCount(len(self.portfolio.get_assets()))
+        self.table.setRowCount(len(self.portfolio.get_asset_names()))
         for row, asset in enumerate(self.portfolio.get_pairs()):
             self.table.setItem(row, 0, QTableWidgetItem(str(asset[0])))
             self.table.setItem(row, 1, QTableWidgetItem(str(asset[1])))
@@ -209,3 +226,41 @@ class PortfolioWindow(Window):
         self.portfolio.remove_asset(asset)
         self.reload_table()
         self.reload_chart()
+
+    def add_testing_widgets(self):
+        testing_area = QGroupBox('Testing Area')
+        layout = QHBoxLayout()
+        testing_area.setLayout(layout)
+
+        self.textbox_begin_date = QLineEdit()
+        self.textbox_begin_date.setPlaceholderText('Starting Date (YYYY-MM-DD)')
+        layout.addWidget(self.textbox_begin_date)
+
+        self.textbox_end_date = QLineEdit()
+        self.textbox_end_date.setPlaceholderText('End Date (YYYY-MM-DD)')
+        layout.addWidget(self.textbox_end_date)
+
+        button = QPushButton('Calculate')
+        button.clicked.connect(self.test_with_historical_data)
+        layout.addWidget(button)
+
+        self.main_layout.addWidget(testing_area)
+
+    def test_with_historical_data(self) -> None:
+        try:
+            # get data for specific period
+            starting_price = 0
+            final_price = 0
+
+            for asset, shares in self.portfolio.get_pairs():
+                data = asset.get_data_between_dates(self.textbox_begin_date.text(), self.textbox_end_date.text())
+                print(data)
+                starting_price += data.iloc[0]['Open'] * shares
+                final_price += data.iloc[-1]['Close'] * shares
+
+            print(f'Starting price: {starting_price}')
+            print(f'Final price: {final_price}')
+            print(f'Profit: {final_price - starting_price}')
+            print(f'Percentage Profit: {(final_price - starting_price) / starting_price * 100}%')
+        except Exception as e:
+            print(e)
