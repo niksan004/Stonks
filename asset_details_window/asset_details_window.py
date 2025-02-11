@@ -9,8 +9,7 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 
 from config.config import config
 from navigation.navigation import Window
-
-import datetime as dt
+from portfolio.portfolio import Asset
 
 
 class ChartWidget(QWidget):
@@ -19,10 +18,7 @@ class ChartWidget(QWidget):
     def __init__(self, asset_abbr):
         super().__init__()
 
-        self.asset_name = ''
-        self.asset_abbr = asset_abbr
-        self.asset = None
-        self.data = None
+        self.asset = Asset(asset_abbr)
 
         # create the matplotlib figure and canvas
         self.figure, self.ax = plt.subplots(figsize=(10, 6))
@@ -36,46 +32,25 @@ class ChartWidget(QWidget):
         # fetch asset data and plot
         self.plot_asset_data()
 
-    def __str__(self):
-        return self.asset_name
-
     def plot_asset_data(self):
         """Plot asset chart."""
-
-        self.asset = yf.Ticker(self.asset_abbr)
-        self.data = self.asset.history('max')
-
-        # raise exception is search is unsuccessful
-        if self.data.empty:
-            raise Exception('No data found.')
-
-        self.asset_name = self.asset.info.get('shortName', 'No company name available')
 
         # clear the previous plot and plot the new data
         self.ax.clear()
 
         # create plot
-        self.create_plot(self.data)
+        self.create_plot(self.asset.data)
 
     def refresh_with_new_period(self, period):
         """Refresh plot with new period."""
-        # clear the previous plot and plot the new data
         self.ax.clear()
-
-        # get data for specific period
-        tz = self.data.index.tzinfo
-        today = dt.datetime.today()
-        delta = today.replace(tzinfo=tz) - dt.timedelta(days=period)
-
-        # filter for period and create plot
-        filtered_data = self.data.loc[self.data.index >= delta]
-        self.create_plot(filtered_data)
+        self.create_plot(self.asset.get_data_in_period(period))
 
     def create_plot(self, data):
         """Create plot."""
         # create plot
-        self.ax.plot(data.index, data['Close'], label=f'{self.asset_name} Close Price', color='green')
-        self.ax.set_title(f'{self.asset_name} Asset Price', color='gray')
+        self.ax.plot(data.index, data['Close'], label=f'{self.asset.asset_name} Close Price', color='green')
+        self.ax.set_title(f'{self.asset.asset_name} Asset Price', color='gray')
         self.ax.set_xlabel('Date', color='gray')
         self.ax.set_ylabel('Price (USD)', color='gray')
         self.ax.legend()
@@ -137,10 +112,11 @@ class AssetDetailsWindow(Window):
 
         # if an unexpected error occurs
         try:
-            self.plot = ChartWidget(self.textbox.text().upper())
-        except Exception:
+            self.plot = ChartWidget(self.textbox.text())
+        except Exception as e:
             self.textbox.clear()
             self.textbox.setPlaceholderText('No asset found')
+            print(e)
             return
 
         # add chart to window

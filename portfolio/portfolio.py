@@ -10,6 +10,8 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from config.config import config
 from navigation.navigation import Window
 
+from sqlite_connector.sqlite_connector import sqlite
+
 import datetime as dt
 
 
@@ -17,13 +19,19 @@ class Asset:
     """Represent an asset."""
 
     def __init__(self, asset_abbr):
-        self.asset_abbr = asset_abbr
-
+        self.asset_abbr = asset_abbr.upper()
         self.asset = yf.Ticker(self.asset_abbr)
+        self.data = sqlite.get_data_if_exists(self.asset_abbr)
 
-        self.asset_name = self.asset.info.get('shortName', None)
-        if not self.asset_name:
-            raise Exception('No such asset.')
+        if self.data.empty:
+            self.data = self.asset.history('max')
+            sqlite.insert_into_assets(self.data.copy(), self.asset_abbr)
+
+        # raise exception is search is unsuccessful
+        if self.data.empty:
+            raise Exception('No data found.')
+
+        self.asset_name = self.asset.info.get('shortName', 'No company name available')
 
     def __str__(self):
         return self.asset_name
@@ -40,6 +48,15 @@ class Asset:
 
     def get_data_between_dates(self, start_date, end_date):
         return self.asset.history(start=start_date, end=end_date)
+
+    def get_data_in_period(self, period):
+        """Get data from specific period (ex. last month)."""
+        tz = self.data.index.tzinfo
+        today = dt.datetime.today()
+        delta = today.replace(tzinfo=tz) - dt.timedelta(days=period)
+
+        # filter for period
+        return self.data.loc[self.data.index >= delta]
 
 
 class Portfolio:

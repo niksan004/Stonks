@@ -14,9 +14,12 @@ def main():
    # set window size in config
    config['WINDOW_SIZE'] = calc_window_size(app)
 
-   # create main menu
-   main_menu = MainMenu()
-   main_menu.show()
+   try:
+      # create main menu
+      main_menu = MainMenu()
+      main_menu.show()
+   except Exception as e:
+      print(e)
 
    # run the application event loop
    sys.exit(app.exec())
