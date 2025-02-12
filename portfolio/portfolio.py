@@ -1,12 +1,16 @@
+from datetime import datetime
+
 import pandas as pd
+import pytz
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLineEdit, QPushButton, QTableWidget, QTableWidgetItem, QScrollArea, \
-    QHBoxLayout, QHeaderView, QGroupBox, QTextEdit
+    QHBoxLayout, QHeaderView, QGroupBox, QTextEdit, QDialog, QLabel
 
 import yfinance as yf
 
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from pandas.core.interchange.dataframe_protocol import DataFrame
 
 from config.config import config
 from navigation.navigation import Window
@@ -29,6 +33,8 @@ class Asset:
             self.info = self.asset.info.get('shortName', 'No company name available')
             sqlite.insert_into_db(self.asset_abbr, self.history.copy(), self.info)
 
+        self.history.index.tz_localize(None)
+
         # raise exception if search is unsuccessful
         if self.history.empty:
             raise Exception('No data found.')
@@ -46,12 +52,12 @@ class Asset:
     def short_name(self):
         return self.info
 
-    def get_data_between_dates(self, start_date, end_date):
+    def get_data_between_dates(self, start_date: str, end_date: str):
         start_date = pd.to_datetime(start_date)
         end_date = pd.to_datetime(end_date)
         return self.history.loc[(self.history.index >= start_date) & (self.history.index <= end_date)]
 
-    def get_data_in_period(self, period):
+    def get_data_in_period(self, period: int):
         """Get data from specific period (ex. last month)."""
         tz = self.history.index.tzinfo
         today = dt.datetime.today()
@@ -148,8 +154,7 @@ class PortfolioWindow(Window):
         self.setWindowTitle('Portfolio')
 
         # create central widget
-        central_widget = QScrollArea()
-        central_widget.setWidgetResizable(True)
+        central_widget = QWidget()
         self.main_layout = QVBoxLayout()
         self.main_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         central_widget.setLayout(self.main_layout)
@@ -178,6 +183,7 @@ class PortfolioWindow(Window):
         self.textbox_begin_date = None
         self.textbox_end_date = None
         self.results_area = None
+        self.periodic_assets = {}
         self.add_testing_widgets()
 
     def add_search_widgets(self):
@@ -224,18 +230,31 @@ class PortfolioWindow(Window):
         self.table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
         # remake table with new data
-        self.table.setColumnCount(3)
-        self.table.setHorizontalHeaderLabels(['Asset', 'Shares', ''])
+        self.table.setColumnCount(4)
+        self.table.setHorizontalHeaderLabels(['Asset', 'Shares', '', ''])
 
         self.table.setRowCount(len(self.portfolio.get_asset_names()))
+
         for row, asset in enumerate(self.portfolio.get_pairs()):
+            # asset is tuple (asset, shares)
+            # asset column
             self.table.setItem(row, 0, QTableWidgetItem(str(asset[0])))
+
+            # shares column
             self.table.setItem(row, 1, QTableWidgetItem(str(asset[1])))
 
+            # add periodically column
+            add_periodically_button = QPushButton('Set Periodical Buying')
+            add_periodically_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            add_periodically_button.clicked.connect(lambda signal, asset_to_add=asset[0]:
+                                                    self.add_periodically_menu(asset_to_add))
+            self.table.setCellWidget(row, 2, add_periodically_button)
+
+            # remove column (doesn't have a column name)
             remove_button = QPushButton('Remove')
             remove_button.clicked.connect(lambda signal, asset_to_remove=asset[0]:
                                           self.remove_from_portfolio(asset_to_remove))
-            self.table.setCellWidget(row, 2, remove_button)
+            self.table.setCellWidget(row, 3, remove_button)
 
         self.asset_layout.addWidget(self.table)
 
@@ -243,9 +262,18 @@ class PortfolioWindow(Window):
         self.chart.redraw(self.portfolio)
 
     def remove_from_portfolio(self, asset):
+        """Remove asset from portfolio and table."""
         self.portfolio.remove_asset(asset)
         self.reload_table()
         self.reload_chart()
+
+    def add_periodically_menu(self, asset):
+        """Add periodic buying of asset."""
+        result = self.periodic_assets.get(asset, [0, 0]) # result will be [<period>, <shares-to-buy>]
+        dialog = PeriodDialog(result)
+
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self.periodic_assets[asset] = result
 
     def add_testing_widgets(self):
         testing_area = QGroupBox('Testing Area')
@@ -275,23 +303,109 @@ class PortfolioWindow(Window):
     def test_with_historical_data(self) -> None:
         try:
             # get data for specific period
-            starting_price = 0
+            buying_price = 0
             final_price = 0
             dividend_profit = 0
 
             for asset, shares in self.portfolio.get_pairs():
-                data = asset.get_data_between_dates(self.textbox_begin_date.text(), self.textbox_end_date.text())
-                dividend_profit += sum(data['Dividends'][data['Dividends'] != 0] * shares)
-                starting_price += data.iloc[0]['Open'] * shares
+                begin_date = self.textbox_begin_date.text()
+                end_date = self.textbox_end_date.text()
+                data = asset.get_data_between_dates(begin_date, end_date)
+                dividend_profit += sum(data['Dividends'][data['Dividends'] != 0]) * shares
+                buying_price += data.iloc[0]['Open'] * shares
                 final_price += data.iloc[-1]['Close'] * shares
 
-            profit = final_price - starting_price + dividend_profit
+                # calculate profit from periodic buying
+                periodic_res = self.calc_periodic(asset, begin_date, end_date, data)
+                buying_price += periodic_res[0]
+                final_price += periodic_res[1]
+
+            profit = final_price - buying_price + dividend_profit
             self.results_area.setHtml(f"""
                 <h2>Results</h2>
-                <p><big>Starting price: {round(starting_price, 2)} $</big></p>
+                <p><big>Buying price: {round(buying_price, 2)} $</big></p>
                 <p><big>Final price: {round(final_price, 2)} $</big></p>
                 <p><big>Profit: {round(profit, 2)} $</big></p>
-                <p><big>Percentage Profit: {round(profit / starting_price * 100, 2)} %</big></p>
+                <p><big>Percentage Profit: {round(profit / buying_price * 100, 2)} %</big></p>
             """)
         except Exception as e:
             print(e)
+
+    def calc_periodic(self, asset: Asset, begin_date: str, end_date: str, data: pd.DataFrame) -> tuple[float, float]:
+        buying_price = 0
+        final_price = 0
+
+        if asset in self.periodic_assets:
+            period = self.periodic_assets[asset][0]
+            shares_per_period = self.periodic_assets[asset][1]
+            begin_date = pd.to_datetime(begin_date)
+            end_date = pd.to_datetime(end_date)
+            delta = pd.Timedelta(days=period)
+            begin_date += delta
+            while begin_date <= end_date:
+                one_day_delta = pd.Timedelta(days=1)
+                temp_date = begin_date
+                to_buy = data.loc[data.index == begin_date]['Open']
+                while to_buy.empty and temp_date <= end_date:
+                    temp_date += one_day_delta
+                    to_buy = data.loc[data.index == temp_date]['Open']
+
+                if to_buy.empty:
+                    begin_date += delta
+                    continue
+
+                buying_price += to_buy.iloc[0] * shares_per_period
+                final_price += data.iloc[-1]['Close'] * shares_per_period
+                begin_date += delta
+
+        return buying_price, final_price
+
+
+class PeriodDialog(QDialog):
+    """Pop up window to set up periodic buying of assets."""
+
+    def __init__(self, result: list):
+        super().__init__()
+
+        self.result = result
+
+        self.setWindowTitle('Select Periodic Buying')
+
+        textbox_layout = QHBoxLayout()
+
+        self.period_textbox = QLineEdit()
+        self.period_textbox.setPlaceholderText('Enter period in days')
+        textbox_layout.addWidget(self.period_textbox)
+
+        self.shares_textbox = QLineEdit()
+        self.shares_textbox.setPlaceholderText('Enter number of shares')
+        textbox_layout.addWidget(self.shares_textbox)
+
+        button_layout = QHBoxLayout()
+
+        self.apply_button = QPushButton('Apply')
+        self.apply_button.clicked.connect(self.get_input)
+        button_layout.addWidget(self.apply_button)
+
+        self.cancel_button = QPushButton('Cancel')
+        self.cancel_button.clicked.connect(self.reject)
+        button_layout.addWidget(self.cancel_button)
+
+        main_layout = QVBoxLayout()
+
+        if self.result:
+            already_set_data = QLabel(f'Already set: period={self.result[0]} days shares={self.result[1]}')
+            main_layout.addWidget(already_set_data)
+
+        main_layout.addLayout(textbox_layout)
+        main_layout.addLayout(button_layout)
+
+        self.setLayout(main_layout)
+
+    def get_input(self):
+        # if incomplete data is entered pressing apply does nothing
+        if not self.period_textbox.text() or not self.shares_textbox.text():
+            return
+        self.result[0] = int(self.period_textbox.text())
+        self.result[1] = int(self.shares_textbox.text())
+        self.accept()
