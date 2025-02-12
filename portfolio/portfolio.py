@@ -307,9 +307,10 @@ class PortfolioWindow(Window):
             final_price = 0
             dividend_profit = 0
 
+            begin_date = self.textbox_begin_date.text()
+            end_date = self.textbox_end_date.text()
+
             for asset, shares in self.portfolio.get_pairs():
-                begin_date = self.textbox_begin_date.text()
-                end_date = self.textbox_end_date.text()
                 data = asset.get_data_between_dates(begin_date, end_date)
                 dividend_profit += sum(data['Dividends'][data['Dividends'] != 0]) * shares
                 buying_price += data.iloc[0]['Open'] * shares
@@ -334,12 +335,19 @@ class PortfolioWindow(Window):
     def calc_periodic(self, asset: Asset, begin_date: str, end_date: str, data: pd.DataFrame) -> tuple[float, float]:
         buying_price = 0
         final_price = 0
+        begin_date = pd.to_datetime(begin_date)
+        end_date = pd.to_datetime(end_date)
+
+        if begin_date < data.index[0]:
+            begin_date = data.index[0]
+            print(begin_date)
+
+        if end_date > data.index[-1]:
+            end_date = data.index[-1]
 
         if asset in self.periodic_assets:
             period = self.periodic_assets[asset][0]
             shares_per_period = self.periodic_assets[asset][1]
-            begin_date = pd.to_datetime(begin_date)
-            end_date = pd.to_datetime(end_date)
             delta = pd.Timedelta(days=period)
             begin_date += delta
             while begin_date <= end_date:

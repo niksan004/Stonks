@@ -48,11 +48,13 @@ class SQLiteConnector:
         history['Date'] = history['Date'].dt.strftime('%Y-%m-%d')
         history.fillna({'Dividends': 0, 'Stock Splits': 0}, inplace=True)
         history['Name'] = [abbrev] * len(history)
-        values = [tuple(row) for row in history.itertuples(index=False, name=None)]
+        history = history.rename(columns={'Stock Splits': 'Stock_Splits'})
+        print(history)
+        values = [(row.Date, row.Name, row.Open, row.High, row.Low, row.Close, row.Volume, row.Dividends, row.Stock_Splits) for row in history.itertuples(index=False)]
 
         self.cursor.executemany("""
             INSERT INTO historical
-            (date, open, high, low, close, volume, dividends, stock_splits, name)
+            (date, name, open, high, low, close, volume, dividends, stock_splits)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, values)
 
