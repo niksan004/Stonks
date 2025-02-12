@@ -1,6 +1,7 @@
+import pandas as pd
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLineEdit, QPushButton, QTableWidget, QTableWidgetItem, QScrollArea, \
-    QHBoxLayout, QHeaderView, QGroupBox
+    QHBoxLayout, QHeaderView, QGroupBox, QTextEdit
 
 import yfinance as yf
 
@@ -20,43 +21,44 @@ class Asset:
 
     def __init__(self, asset_abbr):
         self.asset_abbr = asset_abbr.upper()
-        self.asset = yf.Ticker(self.asset_abbr)
-        self.data = sqlite.get_data_if_exists(self.asset_abbr)
+        self.history, self.info = sqlite.get_data_if_exists(self.asset_abbr)
 
-        if self.data.empty:
-            self.data = self.asset.history('max')
-            sqlite.insert_into_assets(self.data.copy(), self.asset_abbr)
+        if self.history.empty:
+            self.asset = yf.Ticker(self.asset_abbr)
+            self.history = self.asset.history('max')
+            self.info = self.asset.info.get('shortName', 'No company name available')
+            sqlite.insert_into_db(self.asset_abbr, self.history.copy(), self.info)
 
-        # raise exception is search is unsuccessful
-        if self.data.empty:
+        # raise exception if search is unsuccessful
+        if self.history.empty:
             raise Exception('No data found.')
 
-        self.asset_name = self.asset.info.get('shortName', 'No company name available')
-
     def __str__(self):
-        return self.asset_name
+        return self.short_name
 
     def __hash__(self):
-        return hash(self.asset_name)
+        return hash(self.short_name)
 
     def __eq__(self, other):
-        return self.asset_name == other.asset_name
+        return self.short_name == other.short_name
 
     @property
-    def info(self):
-        return self.asset.info
+    def short_name(self):
+        return self.info
 
     def get_data_between_dates(self, start_date, end_date):
-        return self.asset.history(start=start_date, end=end_date)
+        start_date = pd.to_datetime(start_date)
+        end_date = pd.to_datetime(end_date)
+        return self.history.loc[(self.history.index >= start_date) & (self.history.index <= end_date)]
 
     def get_data_in_period(self, period):
         """Get data from specific period (ex. last month)."""
-        tz = self.data.index.tzinfo
+        tz = self.history.index.tzinfo
         today = dt.datetime.today()
         delta = today.replace(tzinfo=tz) - dt.timedelta(days=period)
 
         # filter for period
-        return self.data.loc[self.data.index >= delta]
+        return self.history.loc[self.history.index >= delta]
 
 
 class Portfolio:
@@ -175,6 +177,7 @@ class PortfolioWindow(Window):
         # add testing option
         self.textbox_begin_date = None
         self.textbox_end_date = None
+        self.results_area = None
         self.add_testing_widgets()
 
     def add_search_widgets(self):
@@ -247,19 +250,25 @@ class PortfolioWindow(Window):
     def add_testing_widgets(self):
         testing_area = QGroupBox('Testing Area')
         layout = QHBoxLayout()
-        testing_area.setLayout(layout)
 
-        self.textbox_begin_date = QLineEdit()
+        self.textbox_begin_date = QLineEdit('2016-01-01')
         self.textbox_begin_date.setPlaceholderText('Starting Date (YYYY-MM-DD)')
         layout.addWidget(self.textbox_begin_date)
 
-        self.textbox_end_date = QLineEdit()
+        self.textbox_end_date = QLineEdit('2025-01-01')
         self.textbox_end_date.setPlaceholderText('End Date (YYYY-MM-DD)')
         layout.addWidget(self.textbox_end_date)
 
         button = QPushButton('Calculate')
         button.clicked.connect(self.test_with_historical_data)
         layout.addWidget(button)
+
+        self.results_area = QTextEdit()
+        self.results_area.setReadOnly(True)
+        outer_layout = QVBoxLayout()
+        outer_layout.addLayout(layout)
+        outer_layout.addWidget(self.results_area)
+        testing_area.setLayout(outer_layout)
 
         self.main_layout.addWidget(testing_area)
 
@@ -268,16 +277,21 @@ class PortfolioWindow(Window):
             # get data for specific period
             starting_price = 0
             final_price = 0
+            dividend_profit = 0
 
             for asset, shares in self.portfolio.get_pairs():
                 data = asset.get_data_between_dates(self.textbox_begin_date.text(), self.textbox_end_date.text())
-                print(data)
+                dividend_profit += sum(data['Dividends'][data['Dividends'] != 0] * shares)
                 starting_price += data.iloc[0]['Open'] * shares
                 final_price += data.iloc[-1]['Close'] * shares
 
-            print(f'Starting price: {starting_price}')
-            print(f'Final price: {final_price}')
-            print(f'Profit: {final_price - starting_price}')
-            print(f'Percentage Profit: {(final_price - starting_price) / starting_price * 100}%')
+            profit = final_price - starting_price + dividend_profit
+            self.results_area.setHtml(f"""
+                <h2>Results</h2>
+                <p><big>Starting price: {round(starting_price, 2)} $</big></p>
+                <p><big>Final price: {round(final_price, 2)} $</big></p>
+                <p><big>Profit: {round(profit, 2)} $</big></p>
+                <p><big>Percentage Profit: {round(profit / starting_price * 100, 2)} %</big></p>
+            """)
         except Exception as e:
             print(e)

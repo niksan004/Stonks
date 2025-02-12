@@ -12,7 +12,7 @@ class SQLiteConnector:
 
         # create tables if they don't exist
         self.cursor.execute("""
-            CREATE TABLE IF NOT EXISTS assets (
+            CREATE TABLE IF NOT EXISTS historical (
                 id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
                 date TEXT NOT NULL,
@@ -26,34 +26,65 @@ class SQLiteConnector:
             )
         """)
 
+        self.cursor.execute("""
+            CREATE TABLE IF NOT EXISTS assets (
+                id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                abbreviation TEXT NOT NULL,
+                short_name TEXT
+            )
+        """)
+
         # TODO profile data
 
     def __del__(self):
         self.conn.commit()
         self.conn.close()
 
-    def insert_into_assets(self, data, name):
+    def insert_into_db(self, abbrev, history, info):
+        # insert historical data
         # transform dataframe into suitable form
-        data.reset_index(inplace=True)
-        data['Date'] = data['Date'].dt.strftime('%Y-%m-%d')
-        data.fillna({'Dividends': 0, 'Stock Splits': 0}, inplace=True)
-        data['Name'] = [name] * len(data)
-        values = [tuple(row) for row in data.itertuples(index=False, name=None)]
 
-        # execute query
-        self.cursor.executemany("""INSERT INTO assets
-                                (date, open, high, low, close, volume, dividends, stock_splits, name)
-                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""", values)
+        history.reset_index(inplace=True)
+        history['Date'] = history['Date'].dt.strftime('%Y-%m-%d')
+        history.fillna({'Dividends': 0, 'Stock Splits': 0}, inplace=True)
+        history['Name'] = [abbrev] * len(history)
+        values = [tuple(row) for row in history.itertuples(index=False, name=None)]
+
+        self.cursor.executemany("""
+            INSERT INTO historical
+            (date, open, high, low, close, volume, dividends, stock_splits, name)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, values)
+
+        # insert asset info
+        # values = tuple(info.itertuples(index=False, name=None))
+        # print(type(info.itertuples(index=False, name=None)))
+        self.cursor.execute(f"""INSERT INTO assets (abbreviation, short_name) VALUES ('{abbrev}', '{info}')""")
+
         self.conn.commit()
 
     def get_data_if_exists(self, asset_abbr):
-        self.cursor.execute(f"SELECT * FROM assets WHERE name='{asset_abbr}'")
-        data = self.cursor.fetchall()
-        data = pd.DataFrame(data, columns=(
-        'ID', 'Name', 'Date', 'Open', 'High', 'Low', 'Close', 'Volume', 'Dividends', 'Stock Splits'))
-        data['Date'] = pd.to_datetime(data['Date'], format='%Y-%m-%d')
-        data.set_index('Date', inplace=True)
-        return data
+        # get data from sqlite
+        self.cursor.execute(f"""
+            SELECT name, date, open, high, low, close, volume, dividends, stock_splits
+            FROM historical 
+            WHERE name='{asset_abbr}'
+        """)
+        history = self.cursor.fetchall()
+
+        # transform data to be suitable
+        history = pd.DataFrame(history, columns=(
+        'Name', 'Date', 'Open', 'High', 'Low', 'Close', 'Volume', 'Dividends', 'Stock Splits'))
+        history['Date'] = pd.to_datetime(history['Date'], format='%Y-%m-%d')
+        history.set_index('Date', inplace=True)
+
+        self.cursor.execute(f"""SELECT short_name FROM assets WHERE abbreviation='{asset_abbr}'""")
+
+        info = self.cursor.fetchone()
+        if info:
+            info = info[0]
+
+        return [history, info]
 
 
 sqlite = SQLiteConnector()

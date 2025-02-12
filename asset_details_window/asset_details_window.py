@@ -39,7 +39,7 @@ class ChartWidget(QWidget):
         self.ax.clear()
 
         # create plot
-        self.create_plot(self.asset.data)
+        self.create_plot(self.asset.history)
 
     def refresh_with_new_period(self, period):
         """Refresh plot with new period."""
@@ -49,8 +49,8 @@ class ChartWidget(QWidget):
     def create_plot(self, data):
         """Create plot."""
         # create plot
-        self.ax.plot(data.index, data['Close'], label=f'{self.asset.asset_name} Close Price', color='green')
-        self.ax.set_title(f'{self.asset.asset_name} Asset Price', color='gray')
+        self.ax.plot(data.index, data['Close'], label=f'{self.asset.short_name} Close Price', color='green')
+        self.ax.set_title(f'{self.asset.short_name} Asset Price', color='gray')
         self.ax.set_xlabel('Date', color='gray')
         self.ax.set_ylabel('Price (USD)', color='gray')
         self.ax.legend()
