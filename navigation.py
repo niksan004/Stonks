@@ -56,6 +56,7 @@ nav = Navigation()
 
 
 class Window(QMainWindow):
+    """Modify QMainWindow so it is added to navigation."""
 
     def __init__(self):
         super().__init__()

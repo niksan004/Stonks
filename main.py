@@ -3,8 +3,8 @@ import sys
 from PyQt6.QtWidgets import QApplication
 
 from main_menu.main_menu import MainMenu
-from config.config import config
-from utils.utils import calc_window_size
+from config import config
+from utils import calc_window_size
 
 
 def main():

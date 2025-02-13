@@ -1,10 +1,9 @@
 from PyQt6.QtGui import QAction
-from PyQt6.QtWidgets import QMainWindow
 
-from asset_details_window.asset_details_window import AssetDetailsWindow
-from portfolio.portfolio import PortfolioWindow
-from config.config import config
-from navigation.navigation import Window, nav
+from asset import AssetDetailsWindow
+from portfolio import PortfolioWindow
+from config import config
+from navigation import Window
 
 
 class MainMenu(Window):
@@ -42,6 +41,5 @@ class MainMenu(Window):
             self.menu_bar.addAction(menu_item)
 
     def open_window(self, window_obj):
-        window = window_obj()
-        window.show()
+        window_obj()
         self.hide()
