@@ -469,9 +469,10 @@ def calculate_monte_carlo_portfolio(portfolio: Portfolio) -> ndarray:
     total_shares = sum(shares)
     weights = np.array(list(map(lambda s: s / total_shares, shares)))
 
+    period = 252 * 10
     # Calculate portfolio expected return and volatility
-    mu = returns.mean() * 252  # Annualized returns
-    cov_matrix = returns.cov() * 252  # Annualized covariance matrix
+    mu = returns.mean() * period  # Annualized returns
+    cov_matrix = returns.cov() * period  # Annualized covariance matrix
 
     # Portfolio drift (mean return)
     portfolio_return = np.sum(weights * mu)
@@ -480,7 +481,7 @@ def calculate_monte_carlo_portfolio(portfolio: Portfolio) -> ndarray:
     portfolio_volatility = np.sqrt(weights.T @ cov_matrix @ weights)
 
     # Monte Carlo Simulation Parameters
-    trading_days = 252
+    trading_days = period
     simulations = 1000
 
     # Generate random shocks (Z) from a normal distribution
@@ -546,8 +547,22 @@ class MonteCarloWindow(Window):
         #     self.main_layout.addWidget(chart)
         #     self.charts.append(chart)
 
-        portfolio_paths = calculate_monte_carlo_portfolio(portfolio,periodic)
+        portfolio_paths = calculate_monte_carlo_portfolio(portfolio)
         self.main_layout.addWidget(MonteCarloChartWidget(portfolio_paths, 'Whole Portfolio'))
+
+        initial_portfolio_value = 0
+        for asset in list(portfolio.get_assets()):
+            initial_portfolio_value += portfolio.assets[asset] * asset.history.iloc[-1]['Close']
+        final_values = portfolio_paths[-1, :]
+        self.main_layout.addWidget(QLabel(f'Initial Portfolio Value: {initial_portfolio_value:.2f}'))
+        self.main_layout.addWidget(QLabel(f'Mean Portfolio Value: {final_values.mean():.2f}'))
+        self.main_layout.addWidget(QLabel(f'Worst Case (5th Percentile): {np.percentile(final_values, 5):.2f}'))
+        self.main_layout.addWidget(QLabel(f'Best Case (95th Percentile): {np.percentile(final_values, 95):.2f}'))
+        self.main_layout.addWidget(QLabel(f'Standard Deviation: {np.std(final_values):.2f}'))
+
+        loss_count = np.sum(final_values < initial_portfolio_value)
+        probability_of_loss = loss_count / len(final_values)
+        self.main_layout.addWidget(QLabel(f'Probability of Loss: {probability_of_loss * 100:.2f}%'))
 
         self.central_widget.setLayout(self.main_layout)
 
