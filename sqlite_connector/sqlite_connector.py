@@ -49,8 +49,15 @@ class SQLiteConnector:
         history.fillna({'Dividends': 0, 'Stock Splits': 0}, inplace=True)
         history['Name'] = [abbrev] * len(history)
         history = history.rename(columns={'Stock Splits': 'Stock_Splits'})
-        print(history)
-        values = [(row.Date, row.Name, row.Open, row.High, row.Low, row.Close, row.Volume, row.Dividends, row.Stock_Splits) for row in history.itertuples(index=False)]
+        values = [(row.Date,
+                   row.Name,
+                   row.Open,
+                   row.High,
+                   row.Low,
+                   row.Close,
+                   row.Volume,
+                   row.Dividends,
+                   row.Stock_Splits) for row in history.itertuples(index=False)]
 
         self.cursor.executemany("""
             INSERT INTO historical

@@ -2,8 +2,6 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QRadioButton, QButtonGroup, QLineEdit, QPushButton, \
     QHBoxLayout
 
-import yfinance as yf
-
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 
@@ -62,7 +60,6 @@ class ChartWidget(QWidget):
 
         # draw plot
         self.canvas.draw()
-
 
 class AssetDetailsWindow(Window):
     """Create window with the plot widget."""

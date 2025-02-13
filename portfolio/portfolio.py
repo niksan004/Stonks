@@ -1,15 +1,14 @@
-from datetime import datetime
-
+import numpy as np
 import pandas as pd
-import pytz
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLineEdit, QPushButton, QTableWidget, QTableWidgetItem, QScrollArea, \
-    QHBoxLayout, QHeaderView, QGroupBox, QTextEdit, QDialog, QLabel
+from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLineEdit, QPushButton, QTableWidget, QTableWidgetItem, QHBoxLayout,
+                             QHeaderView, QGroupBox, QTextEdit, QDialog, QLabel, QScrollArea)
 
 import yfinance as yf
 
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from numpy import ndarray
 from pandas.core.interchange.dataframe_protocol import DataFrame
 
 from config.config import config
@@ -81,7 +80,7 @@ class Portfolio:
         self.assets[asset] = shares
 
     def get_assets(self):
-        return self.assets
+        return self.assets.keys()
 
     def remove_asset(self, asset: Asset) -> None:
         del self.assets[asset]
@@ -90,7 +89,7 @@ class Portfolio:
         return list(map(str, self.assets))
 
     def get_shares(self):
-        return self.assets.values()
+        return list(self.assets.values())
 
     def get_pairs(self):
         return self.assets.items()
@@ -188,10 +187,10 @@ class PortfolioWindow(Window):
 
     def add_search_widgets(self):
         """Create and add textbox and button for searches."""
-        self.textbox_name = QLineEdit()
+        self.textbox_name = QLineEdit('AAPL')
         self.textbox_name.setPlaceholderText('Enter asset abbreviation')
 
-        self.textbox_percentage = QLineEdit()
+        self.textbox_percentage = QLineEdit('2')
         self.textbox_percentage.setPlaceholderText('Enter shares')
 
         self.button = QPushButton('Add')
@@ -287,17 +286,21 @@ class PortfolioWindow(Window):
         self.textbox_end_date.setPlaceholderText('End Date (YYYY-MM-DD)')
         layout.addWidget(self.textbox_end_date)
 
-        button = QPushButton('Calculate')
+        button = QPushButton('Calculate Using Historical Data')
         button.clicked.connect(self.test_with_historical_data)
         layout.addWidget(button)
 
+        button_monte_carlo = QPushButton('Monte Carlo')
+        button_monte_carlo.clicked.connect(self.test_with_monte_carlo)
+
         self.results_area = QTextEdit()
         self.results_area.setReadOnly(True)
+
         outer_layout = QVBoxLayout()
         outer_layout.addLayout(layout)
         outer_layout.addWidget(self.results_area)
+        outer_layout.addWidget(button_monte_carlo)
         testing_area.setLayout(outer_layout)
-
         self.main_layout.addWidget(testing_area)
 
     def test_with_historical_data(self) -> None:
@@ -323,7 +326,7 @@ class PortfolioWindow(Window):
 
             profit = final_price - buying_price + dividend_profit
             self.results_area.setHtml(f"""
-                <h2>Results</h2>
+                <h2>Historical Data Results</h2>
                 <p><big>Buying price: {round(buying_price, 2)} $</big></p>
                 <p><big>Final price: {round(final_price, 2)} $</big></p>
                 <p><big>Profit: {round(profit, 2)} $</big></p>
@@ -340,7 +343,6 @@ class PortfolioWindow(Window):
 
         if begin_date < data.index[0]:
             begin_date = data.index[0]
-            print(begin_date)
 
         if end_date > data.index[-1]:
             end_date = data.index[-1]
@@ -367,6 +369,13 @@ class PortfolioWindow(Window):
                 begin_date += delta
 
         return buying_price, final_price
+
+    def test_with_monte_carlo(self):
+        try:
+            monte_carlo_window = MonteCarloWindow(self.portfolio)
+            self.hide()
+        except Exception as e:
+            print(e)
 
 
 class PeriodDialog(QDialog):
@@ -417,3 +426,139 @@ class PeriodDialog(QDialog):
         self.result[0] = int(self.period_textbox.text())
         self.result[1] = int(self.shares_textbox.text())
         self.accept()
+
+def calculate_monte_carlo_asset(asset: Asset, shares: float) -> ndarray:
+    """Make Monte Carlo simulation for a single asset."""
+    prices = asset.history['Close'].copy()
+    returns = np.log(prices / prices.shift(1))
+    sigma = returns.std() * np.sqrt(252)
+
+    # 3. Set simulation parameters
+    risk_free_rate = 0.01  # Risk-free rate (assumed 1% per year)
+    delta_time = 1 / 252  # Time step (1 trading day)
+    trading_days = 252  # Total number of trading days to simulate (1 year)
+    simulations = 1000  # Number of simulation paths
+    starting_price = prices.iloc[-1] * shares  # Starting price from last available data point
+
+    rand = np.random.normal(0, 1, (trading_days, simulations))
+
+    # 5. Initialize the price paths array
+    price_paths = np.zeros((trading_days, simulations))
+    price_paths[0] = starting_price * np.exp(
+        (risk_free_rate - 0.5 * sigma ** 2) * delta_time + sigma * np.sqrt(delta_time) * rand[0])
+
+    # 6. Simulate the price paths using the formula:
+    #    S_{t+dt} = S_t * exp((r - 0.5*sigma^2)*dt + sigma*sqrt(dt)*Z)
+    for t in range(1, trading_days):
+        price_paths[t] = price_paths[t - 1] * np.exp(
+            (risk_free_rate - 0.5 * sigma ** 2) * delta_time + sigma * np.sqrt(delta_time) * rand[t])
+
+    return price_paths
+
+
+def calculate_monte_carlo_portfolio(portfolio: Portfolio) -> ndarray:
+    data = pd.DataFrame()
+    initial_portfolio_value = 0
+    for asset in list(portfolio.get_assets()):
+        data[asset.asset_abbr] = asset.history['Close'] * portfolio.assets[asset]
+        initial_portfolio_value += portfolio.assets[asset] * asset.history.iloc[-1]['Close']
+
+    data = data.dropna()
+    returns = np.log(data / data.shift(1))
+    shares = portfolio.get_shares()
+    total_shares = sum(shares)
+    weights = np.array(list(map(lambda s: s / total_shares, shares)))
+
+    # Calculate portfolio expected return and volatility
+    mu = returns.mean() * 252  # Annualized returns
+    cov_matrix = returns.cov() * 252  # Annualized covariance matrix
+
+    # Portfolio drift (mean return)
+    portfolio_return = np.sum(weights * mu)
+
+    # Portfolio volatility (standard deviation)
+    portfolio_volatility = np.sqrt(weights.T @ cov_matrix @ weights)
+
+    # Monte Carlo Simulation Parameters
+    trading_days = 252
+    simulations = 1000
+
+    # Generate random shocks (Z) from a normal distribution
+    rand = np.random.normal(0, 1, (trading_days, simulations))
+
+    # Simulate portfolio price paths
+    portfolio_paths = np.zeros((trading_days, simulations))
+    portfolio_paths[0] = initial_portfolio_value
+
+    for t in range(1, trading_days):
+        portfolio_paths[t] = portfolio_paths[t - 1] * np.exp(
+            (portfolio_return - 0.5 * portfolio_volatility ** 2) / trading_days
+            + portfolio_volatility * np.sqrt(1 / trading_days) * rand[t]
+        )
+
+    return portfolio_paths
+
+class MonteCarloChartWidget(QWidget):
+    """Create the plot for Monte Carlo simulations."""
+
+    def __init__(self, price_paths: ndarray, name: str):
+        super().__init__()
+        # create plot
+        self.figure, self.ax = plt.subplots()
+        self.canvas = FigureCanvas(self.figure)
+
+        self.ax.set_title(f'{name}', color='gray')
+        self.ax.set_xlabel('Trading Days', color='gray')
+        self.ax.set_ylabel('Price (USD)', color='gray')
+        self.ax.tick_params(axis='both', colors='gray')
+        bg_color = self.palette().color(self.backgroundRole()).name()
+        self.figure.set_facecolor(bg_color)
+        self.ax.set_facecolor(bg_color)
+
+        self.ax.plot(price_paths, lw=0.5)
+
+        # create a layout for this widget
+        layout = QVBoxLayout()
+        layout.addWidget(self.canvas)
+        self.setLayout(layout)
+
+        self.canvas.setFixedHeight(config['WINDOW_SIZE'][3])
+        self.canvas.draw()
+
+
+class MonteCarloWindow(Window):
+    """Display information about Monte Carlo simulations."""
+
+    def __init__(self, portfolio: Portfolio):
+        super().__init__()
+
+        calculate_monte_carlo_portfolio(portfolio)
+
+        # create central widget
+        self.scroll_area = QScrollArea()
+        self.main_layout = QVBoxLayout()
+        self.central_widget = QWidget()
+
+        # self.charts = []
+        # for asset, shares in list(portfolio.get_pairs()):
+        #     paths = calculate_monte_carlo_asset(asset, shares)
+        #     chart = MonteCarloChartWidget(paths, str(asset))
+        #     self.main_layout.addWidget(chart)
+        #     self.charts.append(chart)
+
+        portfolio_paths = calculate_monte_carlo_portfolio(portfolio,periodic)
+        self.main_layout.addWidget(MonteCarloChartWidget(portfolio_paths, 'Whole Portfolio'))
+
+        self.central_widget.setLayout(self.main_layout)
+
+        self.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
+        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setWidget(self.central_widget)
+
+        self.setCentralWidget(self.scroll_area)
+
+        # set window attributes
+        self.setGeometry(*config['WINDOW_SIZE'])
+        self.setWindowTitle('Monte Carlo')
+        self.show()
