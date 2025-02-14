@@ -1,52 +1,173 @@
 import numpy as np
 import pandas as pd
+
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLineEdit, QPushButton, QTableWidget, QTableWidgetItem, QHBoxLayout,
                              QHeaderView, QGroupBox, QTextEdit, QDialog, QLabel, QScrollArea)
 
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+
 from numpy import ndarray
 
 from config import config
 from navigation import Window
 from asset import Asset
 
+import datetime as dt
+
 
 class Portfolio:
     """Simulated portfolio."""
 
     def __init__(self):
-        self.assets = {}
+        self.static_assets = {}
+        self.periodic_assets = {}
 
-    def add_asset(self, asset_name, shares) -> None:
-        asset = Asset(asset_name)
-        if self.assets.get(asset, None):
-            self.assets[asset] += shares
+    def add_asset(self, name: str, shares: float) -> None:
+        asset = Asset(name)
+        if self.static_assets.get(asset, None):
+            self.static_assets[asset] += shares
             return
-        self.assets[asset] = shares
+        self.static_assets[asset] = shares
+
+    def add_periodic_asset(self, asset, period, shares) -> None:
+        self.periodic_assets[asset] = (period, shares)
+
+    def get_periodic_asset(self, asset) -> list[int, float]:
+        return self.periodic_assets.get(asset, [0, 0])
+
+    def remove_periodic_asset(self, asset):
+        if asset in self.periodic_assets:
+            del self.periodic_assets[asset]
 
     def get_assets(self):
-        return self.assets.keys()
+        return list(self.static_assets.keys())
 
     def remove_asset(self, asset: Asset) -> None:
-        del self.assets[asset]
+        if asset in self.static_assets:
+            del self.static_assets[asset]
 
     def get_asset_names(self):
-        return list(map(str, self.assets))
+        return list(map(str, self.static_assets))
 
     def get_shares(self):
-        return list(self.assets.values())
+        return list(self.static_assets.values())
 
     def get_pairs(self):
-        return self.assets.items()
+        return self.static_assets.items()
+
+    @property
+    def initial_value(self):
+        value = 0
+        for asset in self.get_assets():
+            value += self.static_assets[asset] * asset.history.iloc[-1]['Close']
+        return value
 
     def calc_overlap(self) -> float:
         """Calculate the overlap between the assets in the portfolio."""
         pass
 
-    def test_with_historical_data(self):
-        pass
+    def test_with_historical_data(self, begin_date: dt.datetime, end_date: dt.datetime) -> tuple[float, float]:
+        """Calculate results from historical analysis."""
+        # get data for specific period
+        buying_price = 0
+        final_price = 0
+
+        for asset, shares in self.get_pairs():
+            data = asset.get_data_between_dates(begin_date, end_date)
+            buying_price += data.iloc[0]['Open'] * shares
+            final_price += data.iloc[-1]['Close'] * shares
+
+            # calculate profit from periodic buying
+            if asset in self.periodic_assets:
+                periodic_res = self.calc_periodic(asset, begin_date, end_date, data)
+                buying_price += periodic_res[0]
+                final_price += periodic_res[1]
+
+        return buying_price, final_price
+
+    def calc_periodic(self, asset: Asset,
+                      begin_date: dt.datetime,
+                      end_date: dt.datetime,
+                      data: pd.DataFrame) -> tuple[float, float]:
+        """Calculate results from periodically bought assets."""
+        buying_price = 0
+        final_price = 0
+
+        if begin_date < data.index[0]:
+            begin_date = data.index[0]
+
+        if end_date > data.index[-1]:
+            end_date = data.index[-1]
+
+        period = self.periodic_assets[asset][0]
+        shares_per_period = self.periodic_assets[asset][1]
+        delta = pd.Timedelta(days=period)
+        begin_date += delta
+        while begin_date <= end_date:
+            one_day_delta = pd.Timedelta(days=1)
+            temp_date = begin_date
+            to_buy = data.loc[data.index == begin_date]['Open']
+            while to_buy.empty and temp_date <= end_date:
+                temp_date += one_day_delta
+                to_buy = data.loc[data.index == temp_date]['Open']
+
+            if to_buy.empty:
+                begin_date += delta
+                continue
+
+            buying_price += to_buy.iloc[0] * shares_per_period
+            final_price += data.iloc[-1]['Close'] * shares_per_period
+            begin_date += delta
+
+        return buying_price, final_price
+
+    def test_with_monte_carlo(self, period: int, number_of_simulations: int):
+        data = pd.DataFrame()
+        initial_portfolio_value = 0
+        for asset in self.get_assets():
+            data[asset.asset_abbr] = asset.history['Close'] * self.static_assets[asset]
+            initial_portfolio_value += self.static_assets[asset] * asset.history.iloc[-1]['Close']
+
+        data = data.dropna()
+        returns = np.log(data / data.shift(1))
+        shares = self.get_shares()
+        total_shares = sum(shares)
+        weights = np.array(list(map(lambda s: s / total_shares, shares)))
+
+        # calculate portfolio expected return and volatility
+        mu = returns.mean() * period  # annualized returns
+        cov_matrix = returns.cov() * period  # annualized covariance matrix
+
+        # portfolio drift (mean return)
+        portfolio_return = np.sum(weights * mu)
+
+        # portfolio volatility (standard deviation)
+        volatility = np.sqrt(weights.T @ cov_matrix @ weights)
+
+        # generate random shocks from a normal distribution
+        rand = np.random.normal(0, 1, (period, number_of_simulations))
+
+        # simulate portfolio price paths
+        paths = np.zeros((period, number_of_simulations))
+        paths[0] = initial_portfolio_value
+
+        for t in range(1, period):
+            paths[t] = (paths[t - 1] * np.exp((portfolio_return - 0.5 * volatility ** 2) /
+                                              period + volatility * np.sqrt(1 / period) * rand[t]))
+
+        final_values = paths[-1, :]
+
+        results = {
+            'mean': final_values.mean(),
+            'worst_case': np.percentile(final_values, 5),
+            'best_case': np.percentile(final_values, 95),
+            'std_dev': np.std(final_values),
+            'risk': (np.sum(final_values < self.initial_value) / len(final_values)) * 100
+        }
+
+        return paths, results
 
 
 class PortfolioChart(QWidget):
@@ -214,19 +335,22 @@ class PortfolioWindow(Window):
     def reload_chart(self):
         self.chart.redraw(self.portfolio)
 
-    def remove_from_portfolio(self, asset):
+    def remove_from_portfolio(self, asset: Asset):
         """Remove asset from portfolio and table."""
         self.portfolio.remove_asset(asset)
         self.reload_table()
         self.reload_chart()
 
-    def add_periodically_menu(self, asset):
+    def add_periodically_menu(self, asset: Asset):
         """Add periodic buying of asset."""
-        result = self.periodic_assets.get(asset, [0, 0]) # result will be [<period>, <shares-to-buy>]
+        result = self.portfolio.get_periodic_asset(asset) # result will be [<period>, <shares-to-buy>]
         dialog = PeriodDialog(result)
 
         if dialog.exec() == QDialog.DialogCode.Accepted:
-            self.periodic_assets[asset] = result
+            if result == [0, 0]:
+                self.portfolio.remove_periodic_asset(asset)
+                return
+            self.portfolio.add_periodic_asset(asset, result[0], result[1])
 
     def add_historical_testing_widgets(self):
         testing_area = QGroupBox('Historical Testing Area')
@@ -254,71 +378,19 @@ class PortfolioWindow(Window):
         self.main_layout.addWidget(testing_area)
 
     def test_with_historical_data(self) -> None:
-        try:
-            # get data for specific period
-            buying_price = 0
-            final_price = 0
-            dividend_profit = 0
+        begin_date = pd.to_datetime(self.textbox_begin_date.text())
+        end_date = pd.to_datetime(self.textbox_end_date.text())
 
-            begin_date = self.textbox_begin_date.text()
-            end_date = self.textbox_end_date.text()
+        buying_price, final_price = self.portfolio.test_with_historical_data(begin_date, end_date)
+        profit = final_price - buying_price
 
-            for asset, shares in self.portfolio.get_pairs():
-                data = asset.get_data_between_dates(begin_date, end_date)
-                dividend_profit += sum(data['Dividends'][data['Dividends'] != 0]) * shares
-                buying_price += data.iloc[0]['Open'] * shares
-                final_price += data.iloc[-1]['Close'] * shares
-
-                # calculate profit from periodic buying
-                periodic_res = self.calc_periodic(asset, begin_date, end_date, data)
-                buying_price += periodic_res[0]
-                final_price += periodic_res[1]
-
-            profit = final_price - buying_price + dividend_profit
-            self.results_area.setHtml(f"""
-                <h2>Historical Data Results</h2>
-                <p><big>Buying price: {round(buying_price, 2)} $</big></p>
-                <p><big>Final price: {round(final_price, 2)} $</big></p>
-                <p><big>Profit: {round(profit, 2)} $</big></p>
-                <p><big>Percentage Profit: {round(profit / buying_price * 100, 2)} %</big></p>
-            """)
-        except Exception as e:
-            print(e)
-
-    def calc_periodic(self, asset: Asset, begin_date: str, end_date: str, data: pd.DataFrame) -> tuple[float, float]:
-        buying_price = 0
-        final_price = 0
-        begin_date = pd.to_datetime(begin_date)
-        end_date = pd.to_datetime(end_date)
-
-        if begin_date < data.index[0]:
-            begin_date = data.index[0]
-
-        if end_date > data.index[-1]:
-            end_date = data.index[-1]
-
-        if asset in self.periodic_assets:
-            period = self.periodic_assets[asset][0]
-            shares_per_period = self.periodic_assets[asset][1]
-            delta = pd.Timedelta(days=period)
-            begin_date += delta
-            while begin_date <= end_date:
-                one_day_delta = pd.Timedelta(days=1)
-                temp_date = begin_date
-                to_buy = data.loc[data.index == begin_date]['Open']
-                while to_buy.empty and temp_date <= end_date:
-                    temp_date += one_day_delta
-                    to_buy = data.loc[data.index == temp_date]['Open']
-
-                if to_buy.empty:
-                    begin_date += delta
-                    continue
-
-                buying_price += to_buy.iloc[0] * shares_per_period
-                final_price += data.iloc[-1]['Close'] * shares_per_period
-                begin_date += delta
-
-        return buying_price, final_price
+        self.results_area.setHtml(f"""
+            <h2>Historical Data Results</h2>
+            <p><big>Buying price: {buying_price: .2f} $</big></p>
+            <p><big>Final price: {final_price: .2f} $</big></p>
+            <p><big>Profit: {profit: .2f} $</big></p>
+            <p><big>Percentage Profit: {profit / buying_price * 100: .2f} %</big></p>
+        """)
 
     def add_monte_carlo_widgets(self):
         testing_area = QGroupBox('Monte Carlo Area')
@@ -343,10 +415,15 @@ class PortfolioWindow(Window):
         try:
             period = int(self.textbox_period.text())
             simulations = int(self.textbox_simulations.text())
-            monte_carlo_window = MonteCarloWindow(self.portfolio, period, simulations)
-            self.hide()
-        except Exception as e:
-            print(e)
+        except ValueError:
+            self.textbox_period.clear()
+            self.textbox_period.setPlaceholderText('Invalid input')
+            self.textbox_simulations.clear()
+            self.textbox_simulations.setPlaceholderText('Invalid input')
+            return
+
+        MonteCarloWindow(self.portfolio, period, simulations)
+        self.hide()
 
 
 class PeriodDialog(QDialog):
@@ -395,46 +472,9 @@ class PeriodDialog(QDialog):
         if not self.period_textbox.text() or not self.shares_textbox.text():
             return
         self.result[0] = int(self.period_textbox.text())
-        self.result[1] = int(self.shares_textbox.text())
+        self.result[1] = float(self.shares_textbox.text())
         self.accept()
 
-
-def calculate_monte_carlo_portfolio(portfolio: Portfolio, period: int, simulations: int) -> ndarray:
-    data = pd.DataFrame()
-    initial_portfolio_value = 0
-    for asset in list(portfolio.get_assets()):
-        data[asset.asset_abbr] = asset.history['Close'] * portfolio.assets[asset]
-        initial_portfolio_value += portfolio.assets[asset] * asset.history.iloc[-1]['Close']
-
-    data = data.dropna()
-    returns = np.log(data / data.shift(1))
-    shares = portfolio.get_shares()
-    total_shares = sum(shares)
-    weights = np.array(list(map(lambda s: s / total_shares, shares)))
-
-    # calculate portfolio expected return and volatility
-    mu = returns.mean() * period  # annualized returns
-    cov_matrix = returns.cov() * period  # annualized covariance matrix
-
-    # portfolio drift (mean return)
-    portfolio_return = np.sum(weights * mu)
-
-    # portfolio volatility (standard deviation)
-    portfolio_volatility = np.sqrt(weights.T @ cov_matrix @ weights)
-
-    # generate random shocks from a normal distribution
-    rand = np.random.normal(0, 1, (period, simulations))
-
-    # simulate portfolio price paths
-    portfolio_paths = np.zeros((period, simulations))
-    portfolio_paths[0] = initial_portfolio_value
-
-    for t in range(1, period):
-        portfolio_paths[t] = (portfolio_paths[t - 1] *
-                              np.exp((portfolio_return - 0.5 * portfolio_volatility ** 2) / period
-                                     + portfolio_volatility * np.sqrt(1 / period) * rand[t]))
-
-    return portfolio_paths
 
 class MonteCarloChartWidget(QWidget):
     """Create the plot for Monte Carlo simulations."""
@@ -467,7 +507,7 @@ class MonteCarloChartWidget(QWidget):
 class MonteCarloWindow(Window):
     """Display information about Monte Carlo simulations."""
 
-    def __init__(self, portfolio: Portfolio, period: int, simulations: int):
+    def __init__(self, portfolio: Portfolio, period: int, number_of_simulations: int):
         super().__init__()
 
         # create central widget
@@ -475,22 +515,15 @@ class MonteCarloWindow(Window):
         self.main_layout = QVBoxLayout()
         self.central_widget = QWidget()
 
-        portfolio_paths = calculate_monte_carlo_portfolio(portfolio, period, simulations)
+        # calculate monte carlo and add data to window
+        portfolio_paths, stats = portfolio.test_with_monte_carlo(period, number_of_simulations)
         self.main_layout.addWidget(MonteCarloChartWidget(portfolio_paths, 'Whole Portfolio'))
-
-        initial_portfolio_value = 0
-        for asset in list(portfolio.get_assets()):
-            initial_portfolio_value += portfolio.assets[asset] * asset.history.iloc[-1]['Close']
-        final_values = portfolio_paths[-1, :]
-        self.main_layout.addWidget(QLabel(f'Initial Portfolio Value: {initial_portfolio_value:.2f}'))
-        self.main_layout.addWidget(QLabel(f'Mean Portfolio Value: {final_values.mean():.2f}'))
-        self.main_layout.addWidget(QLabel(f'Worst Case (5th Percentile): {np.percentile(final_values, 5):.2f}'))
-        self.main_layout.addWidget(QLabel(f'Best Case (95th Percentile): {np.percentile(final_values, 95):.2f}'))
-        self.main_layout.addWidget(QLabel(f'Standard Deviation: {np.std(final_values):.2f}'))
-
-        loss_count = np.sum(final_values < initial_portfolio_value)
-        probability_of_loss = loss_count / len(final_values)
-        self.main_layout.addWidget(QLabel(f'Probability of Loss: {probability_of_loss * 100:.2f}%'))
+        self.main_layout.addWidget(QLabel(f'Initial Portfolio Value: {portfolio.initial_value:.2f}'))
+        self.main_layout.addWidget(QLabel(f'Mean Portfolio Value: {stats['mean']:.2f}'))
+        self.main_layout.addWidget(QLabel(f'Worst Case (5th Percentile): {stats['worst_case']:.2f}'))
+        self.main_layout.addWidget(QLabel(f'Best Case (95th Percentile): {stats['best_case']:.2f}'))
+        self.main_layout.addWidget(QLabel(f'Standard Deviation: {stats['std_dev']:.2f}'))
+        self.main_layout.addWidget(QLabel(f'Probability of Loss: {stats['risk']:.2f}%'))
 
         self.central_widget.setLayout(self.main_layout)
 

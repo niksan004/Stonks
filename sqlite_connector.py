@@ -2,6 +2,8 @@ import sqlite3 as sq
 
 import pandas as pd
 
+from utils import transform_dataframe_for_storage, transform_dataframe_for_usage
+
 
 class SQLiteConnector:
     """Manage database."""
@@ -43,12 +45,7 @@ class SQLiteConnector:
     def insert_into_db(self, abbrev, history, info):
         # insert historical data
         # transform dataframe into suitable form
-
-        history.reset_index(inplace=True)
-        history['Date'] = history['Date'].dt.strftime('%Y-%m-%d')
-        history.fillna({'Dividends': 0, 'Stock Splits': 0}, inplace=True)
-        history['Name'] = [abbrev] * len(history)
-        history = history.rename(columns={'Stock Splits': 'Stock_Splits'})
+        history = transform_dataframe_for_storage(history, abbrev)
         values = [(row.Date,
                    row.Name,
                    row.Open,
@@ -82,10 +79,7 @@ class SQLiteConnector:
         history = self.cursor.fetchall()
 
         # transform data to be suitable
-        history = pd.DataFrame(history, columns=(
-        'Name', 'Date', 'Open', 'High', 'Low', 'Close', 'Volume', 'Dividends', 'Stock Splits'))
-        history['Date'] = pd.to_datetime(history['Date'], format='%Y-%m-%d')
-        history.set_index('Date', inplace=True)
+        history = transform_dataframe_for_usage(history)
 
         self.cursor.execute(f"""SELECT short_name FROM assets WHERE abbreviation='{asset_abbr}'""")
 

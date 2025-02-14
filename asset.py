@@ -13,8 +13,6 @@ import yfinance as yf
 
 import datetime as dt
 
-import pandas as pd
-
 
 class Asset:
     """Represent an asset."""
@@ -48,9 +46,7 @@ class Asset:
     def short_name(self):
         return self.info
 
-    def get_data_between_dates(self, start_date: str, end_date: str):
-        start_date = pd.to_datetime(start_date)
-        end_date = pd.to_datetime(end_date)
+    def get_data_between_dates(self, start_date: dt.datetime, end_date: dt.datetime):
         return self.history.loc[(self.history.index >= start_date) & (self.history.index <= end_date)]
 
     def get_data_in_period(self, period: int):
