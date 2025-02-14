@@ -1,6 +1,6 @@
 # global variables
 config = {
-    'WINDOW_SIZE': (), # set in main when program is first executed
+    'WINDOW_SIZE': (), # set in project when program is first executed
     'TIME_PERIODS': {
         '1 month': 30,
         '1 year': 365,

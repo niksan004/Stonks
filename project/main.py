@@ -2,9 +2,9 @@ import sys
 
 from PyQt6.QtWidgets import QApplication
 
-from main_menu.main_menu import MainMenu
-from config import config
-from utils import calc_window_size
+from project.main_menu import MainMenu
+from project.config import config
+from project.utils import calc_window_size
 
 
 def main():
@@ -15,7 +15,7 @@ def main():
    config['WINDOW_SIZE'] = calc_window_size(app)
 
    try:
-      # create main menu
+      # create project menu
       main_menu = MainMenu()
       main_menu.show()
    except Exception as e:

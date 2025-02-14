@@ -5,9 +5,9 @@ from PyQt6.QtWidgets import QWidget, QVBoxLayout, QRadioButton, QButtonGroup, QL
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 
-from config import config
-from navigation import Window
-from sqlite_connector import sqlite
+from project.config import config
+from project.navigation import Window
+from project.sqlite_connector import sqlite
 
 import yfinance as yf
 
@@ -185,7 +185,7 @@ class AssetDetailsWindow(Window):
         for button in buttons:
             self.layout_period_buttons.addWidget(button)
 
-        # add buttons to the main layout
+        # add buttons to the project layout
         self.main_layout.addLayout(self.layout_period_buttons)
 
         # create a QButtonGroup to group the radio buttons together

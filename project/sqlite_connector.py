@@ -1,8 +1,6 @@
 import sqlite3 as sq
 
-import pandas as pd
-
-from utils import transform_dataframe_for_storage, transform_dataframe_for_usage
+from project.utils import transform_dataframe_for_storage, transform_dataframe_for_usage
 
 
 class SQLiteConnector:

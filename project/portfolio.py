@@ -10,9 +10,9 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 
 from numpy import ndarray
 
-from config import config
-from navigation import Window
-from asset import Asset
+from project.config import config
+from project.navigation import Window
+from project.asset import Asset
 
 import datetime as dt
 
