@@ -2,9 +2,9 @@ import sys
 
 from PyQt6.QtWidgets import QApplication
 
-from project.main_menu import MainMenu
-from project.config import config
-from project.utils import calc_window_size
+from UI.main_menu import MainMenu
+from logic.config import config
+from logic.utils import calc_window_size
 
 
 def main():

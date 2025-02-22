@@ -5,58 +5,9 @@ from PyQt6.QtWidgets import QWidget, QVBoxLayout, QRadioButton, QButtonGroup, QL
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 
-from project.config import config
-from project.navigation import Window
-from project.sqlite_connector import sqlite
-
-import yfinance as yf
-
-import datetime as dt
-
-
-class Asset:
-    """Represent an asset."""
-
-    def __init__(self, asset_abbr):
-        self.asset_abbr = asset_abbr.upper()
-        self.history, self.info = sqlite.get_data_if_exists(self.asset_abbr)
-
-        if self.history.empty:
-            self.asset = yf.Ticker(self.asset_abbr)
-            self.history = self.asset.history('max')
-            self.info = self.asset.info.get('shortName', 'No company name available')
-            sqlite.insert_into_db(self.asset_abbr, self.history.copy(), self.info)
-
-        self.history.index.tz_localize(None)
-
-        # raise exception if search is unsuccessful
-        if self.history.empty:
-            raise Exception('No data found.')
-
-    def __str__(self):
-        return self.short_name
-
-    def __hash__(self):
-        return hash(self.short_name)
-
-    def __eq__(self, other):
-        return self.short_name == other.short_name
-
-    @property
-    def short_name(self):
-        return self.info
-
-    def get_data_between_dates(self, start_date: dt.datetime, end_date: dt.datetime):
-        return self.history.loc[(self.history.index >= start_date) & (self.history.index <= end_date)]
-
-    def get_data_in_period(self, period: int):
-        """Get data from specific period (ex. last month)."""
-        tz = self.history.index.tzinfo
-        today = dt.datetime.today()
-        delta = today.replace(tzinfo=tz) - dt.timedelta(days=period)
-
-        # filter for period
-        return self.history.loc[self.history.index >= delta]
+from logic.config import config
+from logic.navigation import Window
+from logic.asset import Asset
 
 
 class ChartWidget(QWidget):

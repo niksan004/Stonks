@@ -1,9 +1,9 @@
 from PyQt6.QtGui import QAction
 
-from project.asset import AssetDetailsWindow
-from project.portfolio import PortfolioWindow
-from project.config import config
-from project.navigation import Window
+from UI.asset import AssetDetailsWindow
+from UI.portfolio import PortfolioWindow
+from logic.config import config
+from logic.navigation import Window
 
 
 class MainMenu(Window):
