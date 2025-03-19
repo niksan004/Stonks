@@ -10,16 +10,13 @@ class Asset:
 
     def __init__(self, asset_abbr):
         self.abbrev = asset_abbr.upper()
-        self.ticker = yf.Ticker(asset_abbr)
-        self.history = sqlite.get_data_if_exists(self.abbrev)
+        self.ticker = yf.Ticker(self.abbrev)
+        self.history, _ = sqlite.get_data_if_exists(self.abbrev)
 
         if self.history.empty:
             self.history = self.ticker.history('max')
-            sqlite.insert_into_db(self.abbrev, self.history.copy())
-
-        self.history = self.history.tz_convert(None)
-
-        print(self.history)
+            self.history = self.history.tz_convert(None)
+            sqlite.insert_into_db(self.abbrev, self.history.copy(), self.short_name)
 
         # raise exception if search is unsuccessful
         if self.history.empty:
